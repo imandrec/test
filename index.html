@@ -4,27 +4,24 @@
   <meta charset="utf-8" />
   <meta name="viewport" content="width=device-width,initial-scale=1,maximum-scale=1,user-scalable=no" />
 
-  <!-- Load A-Frame first, then MindAR -->
-  <script src="https://aframe.io/releases/1.5.0/aframe.min.js"></script>
+  <!-- Load A-Frame 1.4.1 (more reliable with MindAR) -->
+  <script src="https://aframe.io/releases/1.4.1/aframe.min.js"></script>
+  <!-- MindAR A-Frame integration -->
   <script src="https://cdn.jsdelivr.net/npm/mind-ar@1.2.5/dist/mindar-image-aframe.prod.js"></script>
 
   <style>
     html,body { margin:0; height:100%; background:#000; overflow:hidden; }
-    a-scene { position:fixed; inset:0; width:100vw; height:100vh; z-index:0; }
-    .hint   { position:fixed; left:0; right:0; top:0; padding:10px; color:#fff; text-align:center;
-              font-family:system-ui,Arial; pointer-events:none; z-index:2; }
-    .btn    { position:fixed; left:50%; bottom:14px; transform:translateX(-50%); padding:10px 14px;
-              background:#fff; border-radius:6px; font-weight:600; z-index:2; }
-    /* Small debug preview of MindAR's internal camera video (click-through) */
-    #camDbg { position:fixed; right:8px; bottom:8px; width:120px; height:80px; background:#111;
-              object-fit:cover; border:1px solid #0f0; z-index:1; pointer-events:none; opacity:.85; }
+    a-scene   { position:fixed; inset:0; width:100vw; height:100vh; z-index:0; }
+    .hint     { position:fixed; left:0; right:0; top:0; padding:10px; color:#fff;
+                text-align:center; font-family:system-ui,Arial; pointer-events:none; z-index:2; }
+    .btn      { position:fixed; left:50%; bottom:14px; transform:translateX(-50%);
+                padding:10px 14px; background:#fff; border-radius:6px; font-weight:600; z-index:2; }
   </style>
   <title>WebAR</title>
 </head>
 <body>
   <div class="hint">Point your camera at the picture.</div>
   <button id="startBtn" class="btn">Tap to enable sound</button>
-  <video id="camDbg" autoplay playsinline muted></video> <!-- debug preview -->
 
   <!-- Hidden video used as the AR texture -->
   <video id="v1" src="video.mp4" preload="auto" playsinline webkit-playsinline muted loop style="display:none"></video>
@@ -32,32 +29,31 @@
   <a-scene id="scene"
     embedded
     mindar-image="imageTargetSrc: https://test13578.netlify.app/targets/targets.mind; autoStart: false;"
-    device-orientation-permission-ui="enabled: true"
-    renderer="colorManagement: true; physicallyCorrectLights: true; antialias: true"
-    vr-mode-ui="enabled: false">
+    renderer="alpha: true; antialias: true; precision: mediump; powerPreference: high-performance; colorManagement: true"
+    vr-mode-ui="enabled: false"
+    device-orientation-permission-ui="enabled: true">
     <a-camera position="0 0 0" look-controls="enabled: false"></a-camera>
 
+    <!-- If your .mind has multiple images, set targetIndex accordingly -->
     <a-entity mindar-image-target="targetIndex: 0" id="marker0">
       <a-video id="vidPlane" src="#v1" width="1" height="0.56" position="0 0 0"></a-video>
     </a-entity>
   </a-scene>
 
   <script>
-    const scene   = document.getElementById('scene');
-    const marker  = document.getElementById('marker0');
-    const v       = document.getElementById('v1');
-    const startBtn= document.getElementById('startBtn');
-    const camDbg  = document.getElementById('camDbg');
+    const scene    = document.getElementById('scene');
+    const marker   = document.getElementById('marker0');
+    const v        = document.getElementById('v1');
+    const startBtn = document.getElementById('startBtn');
 
-    // iOS: warm up camera permission once
+    // Warm up camera permission (iOS)
     (async () => {
-      try {
-        const s = await navigator.mediaDevices.getUserMedia({ video: { facingMode: "environment" } });
-        s.getTracks().forEach(t => t.stop());
-      } catch {}
+      try { const s = await navigator.mediaDevices.getUserMedia({ video: { facingMode: "environment" } });
+            s.getTracks().forEach(t => t.stop()); } catch {}
+
     })();
 
-    // iOS autoplay policy: one tap enables sound
+    // One tap to allow audio (mobile autoplay policy)
     startBtn.addEventListener('click', async () => {
       try { v.muted = false; await v.play(); } catch {}
       startBtn.style.display = 'none';
@@ -65,43 +61,19 @@
 
     // Start MindAR exactly once
     let started = false;
-    async function startMindAR(label='start()') {
+    async function startMindAR() {
       if (started) return;
-      try {
-        await scene.systems['mindar-image-system'].start();
-        started = true;
-
-        // --- DEBUG: hook MindAR's internal camera video and show it in the corner ---
-        const sys = scene.systems['mindar-image-system'];
-        const camVideo = sys.video; // HTMLVideoElement MindAR uses internally
-        if (camVideo) {
-          // mirror MindAR video into our preview (no extra getUserMedia)
-          const watch = () => {
-            const rs = camVideo.readyState;
-            const playing = !camVideo.paused && !camVideo.ended;
-            console.log('[DBG] mindar.video state=', rs, 'playing=', playing,
-                        'w=', camVideo.videoWidth, 'h=', camVideo.videoHeight);
-          };
-          camVideo.addEventListener('playing', watch);
-          camVideo.addEventListener('loadeddata', watch);
-          // show it
-          camDbg.srcObject = camVideo.srcObject || null;
-          if (!camDbg.srcObject) camDbg.src = camVideo.src || '';
-        }
-      } catch (e) {
-        console.warn('MindAR '+label+' ERROR:', e);
-      }
+      await scene.systems['mindar-image-system'].start();
+      started = true;
     }
 
     scene.addEventListener('arReady', () => { startMindAR(); });
-    scene.addEventListener('arError',  e => console.warn('MindAR arError', e.detail));
-    // Safety fallback
-    setTimeout(() => startMindAR('fallback'), 1500);
+    scene.addEventListener('arError', e => console.warn('MindAR arError', e.detail));
+    // Safety fallback in case timing is odd
+    setTimeout(() => startMindAR(), 1200);
 
-    // Play video overlay when target is found
-    marker.addEventListener('targetFound', async () => {
-      try { await v.play(); } catch {}
-    });
+    // Play overlay video when target is found
+    marker.addEventListener('targetFound', async () => { try { await v.play(); } catch {} });
   </script>
 </body>
 </html>
