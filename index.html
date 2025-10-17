@@ -10,31 +10,27 @@
 
   <style>
     html,body { margin:0; height:100%; background:#000; overflow:hidden; }
-    a-scene { position:fixed; inset:0; width:100vw; height:100vh; }
-    .hint { position:fixed; left:0; right:0; top:0; padding:10px; color:#fff; text-align:center; font-family:system-ui,Arial; z-index:10; pointer-events:none; }
-    .btn  { position:fixed; left:50%; bottom:14px; transform:translateX(-50%); padding:10px 14px; background:#fff; border-radius:6px; font-weight:600; z-index:10; }
-    /* Debug text won't block taps */
-    #dbg  { position:fixed; left:0; right:0; bottom:0; background:rgba(0,0,0,.65); color:#0f0;
-            font:12px/1.4 monospace; padding:6px 8px; max-height:45%; overflow:auto; white-space:pre-wrap; z-index:5; pointer-events:none; }
+    a-scene { position:fixed; inset:0; width:100vw; height:100vh; z-index:0; }
+    .hint   { position:fixed; left:0; right:0; top:0; padding:10px; color:#fff; text-align:center;
+              font-family:system-ui,Arial; pointer-events:none; z-index:2; }
+    .btn    { position:fixed; left:50%; bottom:14px; transform:translateX(-50%); padding:10px 14px;
+              background:#fff; border-radius:6px; font-weight:600; z-index:2; }
+    /* Small debug preview of MindAR's internal camera video (click-through) */
+    #camDbg { position:fixed; right:8px; bottom:8px; width:120px; height:80px; background:#111;
+              object-fit:cover; border:1px solid #0f0; z-index:1; pointer-events:none; opacity:.85; }
   </style>
-  <title>WebAR Demo</title>
+  <title>WebAR</title>
 </head>
 <body>
   <div class="hint">Point your camera at the picture.</div>
   <button id="startBtn" class="btn">Tap to enable sound</button>
-  <div id="dbg"></div>
+  <video id="camDbg" autoplay playsinline muted></video> <!-- debug preview -->
 
   <!-- Hidden video used as the AR texture -->
-  <video id="v1"
-         src="video.mp4"
-         preload="auto"
-         playsinline
-         webkit-playsinline
-         muted
-         loop
-         style="display:none"></video>
+  <video id="v1" src="video.mp4" preload="auto" playsinline webkit-playsinline muted loop style="display:none"></video>
 
   <a-scene id="scene"
+    embedded
     mindar-image="imageTargetSrc: https://test13578.netlify.app/targets/targets.mind; autoStart: false;"
     device-orientation-permission-ui="enabled: true"
     renderer="colorManagement: true; physicallyCorrectLights: true; antialias: true"
@@ -47,26 +43,24 @@
   </a-scene>
 
   <script>
-    const log = (m)=>{ const el=document.getElementById('dbg'); if(el){ el.textContent += m + '\n'; } console.log(m); };
+    const scene   = document.getElementById('scene');
+    const marker  = document.getElementById('marker0');
+    const v       = document.getElementById('v1');
+    const startBtn= document.getElementById('startBtn');
+    const camDbg  = document.getElementById('camDbg');
 
-    const scene  = document.getElementById('scene');
-    const marker = document.getElementById('marker0');
-    const v      = document.getElementById('v1');
-    const startBtn = document.getElementById('startBtn');
-
-    // iOS: prompt camera once
+    // iOS: warm up camera permission once
     (async () => {
       try {
-        const s = await navigator.mediaDevices.getUserMedia({ video: { facingMode: 'environment' } });
-        log('getUserMedia: OK (' + (s.getVideoTracks()[0]?.label || 'camera') + ')');
-        s.getTracks().forEach(t=>t.stop());
-      } catch (e) { log('getUserMedia ERROR -> ' + (e.name||'') + ' ' + (e.message||e)); }
+        const s = await navigator.mediaDevices.getUserMedia({ video: { facingMode: "environment" } });
+        s.getTracks().forEach(t => t.stop());
+      } catch {}
     })();
 
-    // Audio policy
+    // iOS autoplay policy: one tap enables sound
     startBtn.addEventListener('click', async () => {
-      try { v.muted=false; await v.play(); } catch(e){ log('video play error: '+e); }
-      startBtn.style.display='none';
+      try { v.muted = false; await v.play(); } catch {}
+      startBtn.style.display = 'none';
     }, { once:true });
 
     // Start MindAR exactly once
@@ -76,21 +70,37 @@
       try {
         await scene.systems['mindar-image-system'].start();
         started = true;
-        log('MindAR ' + label + ': OK');
+
+        // --- DEBUG: hook MindAR's internal camera video and show it in the corner ---
+        const sys = scene.systems['mindar-image-system'];
+        const camVideo = sys.video; // HTMLVideoElement MindAR uses internally
+        if (camVideo) {
+          // mirror MindAR video into our preview (no extra getUserMedia)
+          const watch = () => {
+            const rs = camVideo.readyState;
+            const playing = !camVideo.paused && !camVideo.ended;
+            console.log('[DBG] mindar.video state=', rs, 'playing=', playing,
+                        'w=', camVideo.videoWidth, 'h=', camVideo.videoHeight);
+          };
+          camVideo.addEventListener('playing', watch);
+          camVideo.addEventListener('loadeddata', watch);
+          // show it
+          camDbg.srcObject = camVideo.srcObject || null;
+          if (!camDbg.srcObject) camDbg.src = camVideo.src || '';
+        }
       } catch (e) {
-        log('MindAR ' + label + ' ERROR: ' + (e?.message || e));
+        console.warn('MindAR '+label+' ERROR:', e);
       }
     }
 
-    scene.addEventListener('loaded',  () => log('A-Frame scene loaded'));
-    scene.addEventListener('arReady', () => { log('MindAR arReady'); startMindAR(); });
-    scene.addEventListener('arError', e => log('MindAR arError: ' + JSON.stringify(e.detail||{})));
-
-    // Safety fallback: try once after a short delay
+    scene.addEventListener('arReady', () => { startMindAR(); });
+    scene.addEventListener('arError',  e => console.warn('MindAR arError', e.detail));
+    // Safety fallback
     setTimeout(() => startMindAR('fallback'), 1500);
 
+    // Play video overlay when target is found
     marker.addEventListener('targetFound', async () => {
-      try { await v.play(); log('targetFound: playing video'); } catch(e){ log('video play on targetFound error: ' + e); }
+      try { await v.play(); } catch {}
     });
   </script>
 </body>
