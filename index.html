@@ -8,7 +8,7 @@
   <script src="https://cdn.jsdelivr.net/npm/mind-ar@1.2.5/dist/mindar-image-aframe.prod.js"></script>
   <style>
     html,body { margin:0; height:100%; background:#000; overflow:hidden; }
-    /* Make sure the AR canvas actually fills the screen on iOS */
+    /* Ensure AR canvas fills the screen on iOS */
     a-scene { position:fixed; inset:0; width:100vw; height:100vh; }
     .hint { position:fixed; left:0; right:0; top:0; padding:10px; color:#fff; text-align:center; font-family:system-ui,Arial; z-index:10; }
     .btn  { position:fixed; left:50%; bottom:14px; transform:translateX(-50%); padding:10px 14px; background:#fff; border-radius:6px; font-weight:600; z-index:10; }
@@ -47,13 +47,13 @@
   </a-scene>
 
   <script>
-    const log = (m)=>{ const el=document.getElementById('dbg'); if(el){ el.textContent += m + '\n'; } console.log(m); };
+    const log = (m)=>{ const el=document.getElementById('dbg'); if(el){ el.textContent += m + '\\n'; } console.log(m); };
     const v = document.getElementById('v1');
     const startBtn = document.getElementById('startBtn');
     const scene = document.getElementById('scene');
     const marker = document.getElementById('marker0');
 
-    // Early probe (forces the iOS camera prompt once)
+    // Early probe (forces iOS camera prompt once)
     (async () => {
       try {
         const s = await navigator.mediaDevices.getUserMedia({ video: { facingMode: 'environment' } });
@@ -81,8 +81,23 @@
     });
     scene.addEventListener('arError',  e => log('MindAR arError: ' + JSON.stringify(e.detail||{})));
 
-    marker.addEventListener('targetFound', async () => { try { await v.play(); } catch(e){ log('video play on targetFound error: ' + e); } });
+    marker.addEventListener('targetFound', async () => {
+      try { await v.play(); log('targetFound: playing video'); } 
+      catch(e){ log('video play on targetFound error: ' + e); } 
+    });
     marker.addEventListener('targetLost', () => { /* v.pause(); */ });
+
+    // Fallback: start MindAR manually after short delay if needed
+    setTimeout(async () => {
+      if (!scene.systems['mindar-image-system']?.video) {
+        try {
+          await scene.systems['mindar-image-system'].start();
+          log('MindAR start() fallback: OK');
+        } catch (e) {
+          log('MindAR start() fallback ERROR: ' + (e?.message || e));
+        }
+      }
+    }, 1500);
   </script>
 </body>
 </html>
