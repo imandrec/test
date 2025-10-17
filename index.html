@@ -3,17 +3,15 @@
 <head>
   <meta charset="utf-8" />
   <meta name="viewport" content="width=device-width,initial-scale=1,maximum-scale=1,user-scalable=no" />
-  <!-- A-Frame + MindAR -->
   <script src="https://cdn.jsdelivr.net/npm/aframe@1.5.0/dist/aframe.min.js"></script>
   <script src="https://cdn.jsdelivr.net/npm/mind-ar@1.2.5/dist/mindar-image-aframe.prod.js"></script>
   <style>
-    html,body { margin:0; height:100%; background:#000; overflow:hidden; }
-    /* Ensure AR canvas fills the screen on iOS */
-    a-scene { position:fixed; inset:0; width:100vw; height:100vh; }
-    .hint { position:fixed; left:0; right:0; top:0; padding:10px; color:#fff; text-align:center; font-family:system-ui,Arial; z-index:10; }
-    .btn  { position:fixed; left:50%; bottom:14px; transform:translateX(-50%); padding:10px 14px; background:#fff; border-radius:6px; font-weight:600; z-index:10; }
-    #dbg  { position:fixed; left:0; right:0; bottom:0; background:rgba(0,0,0,.65); color:#0f0;
-            font:12px/1.4 monospace; padding:6px 8px; max-height:45%; overflow:auto; white-space:pre-wrap; z-index:10; }
+    html, body { margin: 0; height: 100%; background: #000; overflow: hidden; }
+    a-scene { position: fixed; inset: 0; width: 100vw; height: 100vh; }
+    .hint { position: fixed; left:0; right:0; top:0; padding:10px; color:#fff; text-align:center; z-index:10; }
+    .btn { position: fixed; left:50%; bottom:14px; transform:translateX(-50%); padding:10px 14px; background:#fff; border-radius:6px; font-weight:600; z-index:10; }
+    #dbg { position: fixed; left:0; right:0; bottom:0; background:rgba(0,0,0,.65); color:#0f0;
+           font:12px/1.4 monospace; padding:6px 8px; max-height:45%; overflow:auto; white-space:pre-wrap; z-index:10; }
   </style>
   <title>WebAR Demo</title>
 </head>
@@ -22,7 +20,6 @@
   <button id="startBtn" class="btn">Tap to enable sound</button>
   <div id="dbg"></div>
 
-  <!-- Hidden video used as the AR texture -->
   <video id="v1"
          src="video.mp4"
          preload="auto"
@@ -33,71 +30,84 @@
          style="display:none"></video>
 
   <a-scene id="scene"
-    mindar-image="imageTargetSrc: https://test13578.netlify.app/targets/targets.mind; autoStart: false;"
+    mindar-image="imageTargetSrc: ; autoStart: false;"
     device-orientation-permission-ui="enabled: true"
     renderer="colorManagement: true; physicallyCorrectLights: true; antialias: true"
     vr-mode-ui="enabled: false">
     <a-camera position="0 0 0" look-controls="enabled: false"></a-camera>
 
-    <!-- When target #0 is seen, show this plane and play the video -->
     <a-entity mindar-image-target="targetIndex: 0" id="marker0">
-      <!-- Adjust to your print's real size/aspect -->
       <a-video id="vidPlane" src="#v1" width="1" height="0.56" position="0 0 0"></a-video>
     </a-entity>
   </a-scene>
 
   <script>
-    const log = (m)=>{ const el=document.getElementById('dbg'); if(el){ el.textContent += m + '\\n'; } console.log(m); };
+    const log = (m) => {
+      const el = document.getElementById('dbg');
+      if (el) el.textContent += m + '\\n';
+      console.log(m);
+    };
+
+    const sceneEl = document.getElementById('scene');
+    // Build the correct .mind file URL from current domain
+    const mindUrl = `${location.origin}/targets/targets.mind`;
+    sceneEl.setAttribute('mindar-image', `imageTargetSrc: ${mindUrl}; autoStart: false;`);
+    log('mindUrl = ' + mindUrl);
+
     const v = document.getElementById('v1');
     const startBtn = document.getElementById('startBtn');
-    const scene = document.getElementById('scene');
     const marker = document.getElementById('marker0');
 
-    // Early probe (forces iOS camera prompt once)
     (async () => {
       try {
         const s = await navigator.mediaDevices.getUserMedia({ video: { facingMode: 'environment' } });
         log('getUserMedia probe: OK (' + (s.getVideoTracks()[0]?.label || 'camera') + ')');
-        s.getTracks().forEach(t=>t.stop());
-      } catch (e) { log('getUserMedia probe: ERROR -> ' + (e.name||'') + ' ' + (e.message||e)); }
+        s.getTracks().forEach(t => t.stop());
+      } catch (e) {
+        log('getUserMedia probe: ERROR -> ' + (e.name || '') + ' ' + (e.message || e));
+      }
     })();
 
-    // Start audio on tap (mobile autoplay policy)
     startBtn.addEventListener('click', async () => {
-      try { v.muted = false; await v.play(); } catch (e) { log('video play error: ' + e); }
-      startBtn.style.display = 'none';
-    }, { once:true });
-
-    // MindAR lifecycle (explicit start on iOS is more reliable)
-    scene.addEventListener('loaded',   () => log('A-Frame scene loaded'));
-    scene.addEventListener('arReady',  async () => {
-      log('MindAR arReady');
       try {
-        await scene.systems['mindar-image-system'].start();
-        log('MindAR start(): OK');
+        v.muted = false;
+        await v.play();
       } catch (e) {
-        log('MindAR start() ERROR: ' + (e && e.message ? e.message : e));
+        log('video play error: ' + e);
       }
-    });
-    scene.addEventListener('arError',  e => log('MindAR arError: ' + JSON.stringify(e.detail||{})));
+      startBtn.style.display = 'none';
+    }, { once: true });
 
-    marker.addEventListener('targetFound', async () => {
-      try { await v.play(); log('targetFound: playing video'); } 
-      catch(e){ log('video play on targetFound error: ' + e); } 
-    });
-    marker.addEventListener('targetLost', () => { /* v.pause(); */ });
+    const tryStart = async (label) => {
+      try {
+        await sceneEl.systems['mindar-image-system'].start();
+        log(`MindAR ${label}: OK`);
+      } catch (e) {
+        log(`MindAR ${label} ERROR: ` + (e?.message || e));
+      }
+    };
 
-    // Fallback: start MindAR manually after short delay if needed
-    setTimeout(async () => {
-      if (!scene.systems['mindar-image-system']?.video) {
-        try {
-          await scene.systems['mindar-image-system'].start();
-          log('MindAR start() fallback: OK');
-        } catch (e) {
-          log('MindAR start() fallback ERROR: ' + (e?.message || e));
-        }
+    sceneEl.addEventListener('loaded', () => log('A-Frame scene loaded'));
+    sceneEl.addEventListener('arReady', () => {
+      log('MindAR arReady');
+      tryStart('start()');
+    });
+    sceneEl.addEventListener('arError', (e) => log('MindAR arError: ' + JSON.stringify(e.detail || {})));
+
+    setTimeout(() => {
+      if (!sceneEl.systems['mindar-image-system']?.video) {
+        tryStart('fallback start()');
       }
     }, 1500);
+
+    marker.addEventListener('targetFound', async () => {
+      try {
+        await v.play();
+        log('targetFound: playing video');
+      } catch (e) {
+        log('video play on targetFound error: ' + e);
+      }
+    });
   </script>
 </body>
 </html>
