@@ -25,10 +25,10 @@
          playsinline
          webkit-playsinline
          muted
-         loop style="display:none"></video>
+         loop style="display:none" style="display:none"></video>
 
   <a-scene
-    mindar-image="imageTargetSrc: ./targets/yourTarget.mind; autoStart: true;"
+    mindar-image="imageTargetSrc: 'https://est13578.netlify.app/targets/yourTarget.mind'; autoStart: true;"
     device-orientation-permission-ui="enabled: true"
     renderer="colorManagement: true; physicallyCorrectLights: true"
     vr-mode-ui="enabled: false">
@@ -56,5 +56,38 @@
     marker.addEventListener('targetFound', async () => { try { await v.play(); } catch (e) { console.warn(e); } });
     marker.addEventListener('targetLost', () => { /* v.pause(); */ });
   </script>
+
+<!-- Debug + camera probe -->
+<div id="dbg" style="position:fixed;left:0;right:0;bottom:0;background:rgba(0,0,0,.65);color:#0f0;
+font:12px/1.4 monospace;padding:6px 8px;max-height:45%;overflow:auto;white-space:pre-wrap"></div>
+<script>
+  const log = (m)=>{ const el=document.getElementById('dbg'); if(el){ el.textContent += m + '\n'; } console.log(m); };
+  log('protocol=' + location.protocol + ' ua=' + navigator.userAgent);
+  log('inIframe=' + (window.self !== window.top));
+
+  (async () => {
+    try {
+      const s = await navigator.mediaDevices.getUserMedia({ video: { facingMode: 'environment' } });
+      log('getUserMedia: OK (' + (s.getVideoTracks()[0]?.label || 'camera') + ')');
+      s.getTracks().forEach(t=>t.stop());
+    } catch (e) {
+      log('getUserMedia: ERROR -> ' + (e && e.name ? e.name + ': ' + e.message : String(e)));
+      const hint = document.createElement('div');
+      hint.style.cssText='position:fixed;left:50%;top:50%;transform:translate(-50%,-50%);background:#111;color:#fff;padding:12px 16px;border-radius:8px;text-align:center;font:14px system-ui';
+      hint.innerHTML='Camera blocked.<br/>Safari: tap aA → Website Settings → Camera → Allow.';
+      document.body.appendChild(hint);
+    }
+  })();
+
+  window.addEventListener('load', ()=>log('window load'));
+  document.addEventListener('DOMContentLoaded', ()=>log('dom ready'));
+  const scene = document.querySelector('a-scene');
+  if (scene) {
+    scene.addEventListener('loaded', ()=>log('A-Frame scene loaded'));
+    scene.addEventListener('arReady', ()=>log('MindAR arReady'));
+    scene.addEventListener('arError', (e)=>log('MindAR arError: ' + JSON.stringify(e.detail||{})));
+  }
+</script>
+
 </body>
 </html>
