@@ -3,9 +3,13 @@
 <head>
   <meta charset="utf-8" />
   <meta name="viewport" content="width=device-width,initial-scale=1,maximum-scale=1,user-scalable=no" />
-  <!-- A-Frame + MindAR -->
-  <script src="https://cdn.jsdelivr.net/npm/aframe@1.5.0/dist/aframe.min.js"></script>
+
+  <!-- 1) Load A-Frame FIRST (use official CDN for reliability) -->
+  <script src="https://aframe.io/releases/1.5.0/aframe.min.js"></script>
+
+  <!-- 2) Then load MindAR's A-Frame integration -->
   <script src="https://cdn.jsdelivr.net/npm/mind-ar@1.2.5/dist/mindar-image-aframe.prod.js"></script>
+
   <style>
     html,body { margin:0; height:100%; background:#000; overflow:hidden; }
     a-scene { position:fixed; inset:0; width:100vw; height:100vh; }
@@ -31,7 +35,6 @@
          loop
          style="display:none"></video>
 
-  <!-- IMPORTANT: static absolute URL, no nested quotes, correct camelCase autoStart -->
   <a-scene id="scene"
     mindar-image="imageTargetSrc: https://test13578.netlify.app/targets/targets.mind; autoStart: false;"
     device-orientation-permission-ui="enabled: true"
@@ -47,12 +50,19 @@
   <script>
     const log = (m)=>{ const el=document.getElementById('dbg'); if(el){ el.textContent += m + '\n'; } console.log(m); };
 
+    // Sanity check that AFRAME actually loaded
+    if (!window.AFRAME) {
+      log('ERROR: AFRAME failed to load. Check Network tab / CDN / ad blockers.');
+    } else {
+      log('AFRAME loaded: ' + AFRAME.version);
+    }
+
     const scene = document.getElementById('scene');
     const marker = document.getElementById('marker0');
     const v = document.getElementById('v1');
     const startBtn = document.getElementById('startBtn');
 
-    // 1) Force the iOS camera permission once
+    // Camera permission probe (helps iOS)
     (async () => {
       try {
         const s = await navigator.mediaDevices.getUserMedia({ video: { facingMode: 'environment' } });
@@ -61,26 +71,20 @@
       } catch (e) { log('getUserMedia probe: ERROR -> ' + (e.name||'') + ' ' + (e.message||e)); }
     })();
 
-    // 2) iOS audio policy button
     startBtn.addEventListener('click', async () => {
       try { v.muted=false; await v.play(); } catch(e){ log('video play error: '+e); }
       startBtn.style.display='none';
     }, { once:true });
 
-    // 3) MindAR lifecycle (static attribute ensures component is present at parse time)
     scene.addEventListener('loaded',   () => log('A-Frame scene loaded'));
     scene.addEventListener('arReady',  async () => {
       log('MindAR arReady');
-      try {
-        await scene.systems['mindar-image-system'].start();
-        log('MindAR start(): OK');
-      } catch (e) {
-        log('MindAR start() ERROR: ' + (e?.message || e));
-      }
+      try { await scene.systems['mindar-image-system'].start(); log('MindAR start(): OK'); }
+      catch (e) { log('MindAR start() ERROR: ' + (e?.message || e)); }
     });
     scene.addEventListener('arError',  e => log('MindAR arError: ' + JSON.stringify(e.detail||{})));
 
-    // 4) Fallback: start MindAR after a short delay if arReady didn’t fire
+    // Fallback start in case timing is weird
     setTimeout(async () => {
       if (!scene.systems['mindar-image-system']?.video) {
         try { await scene.systems['mindar-image-system'].start(); log('MindAR fallback start(): OK'); }
@@ -88,7 +92,6 @@
       }
     }, 1500);
 
-    // 5) Start video when the target is found
     marker.addEventListener('targetFound', async () => {
       try { await v.play(); log('targetFound: playing video'); } catch(e){ log('video play on targetFound error: ' + e); }
     });
