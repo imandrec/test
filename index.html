@@ -3,17 +3,14 @@
 <head>
   <meta charset="utf-8" />
   <meta name="viewport" content="width=device-width,initial-scale=1,maximum-scale=1,user-scalable=no" />
-
-  <!-- Load A-Frame 1.4.1 (more reliable with MindAR) -->
+  <!-- Load A-Frame (1.4.1) then MindAR -->
   <script src="https://aframe.io/releases/1.4.1/aframe.min.js"></script>
-  <!-- MindAR A-Frame integration -->
   <script src="https://cdn.jsdelivr.net/npm/mind-ar@1.2.5/dist/mindar-image-aframe.prod.js"></script>
-
   <style>
     html,body { margin:0; height:100%; background:#000; overflow:hidden; }
     a-scene   { position:fixed; inset:0; width:100vw; height:100vh; z-index:0; }
-    .hint     { position:fixed; left:0; right:0; top:0; padding:10px; color:#fff;
-                text-align:center; font-family:system-ui,Arial; pointer-events:none; z-index:2; }
+    .hint     { position:fixed; left:0; right:0; top:0; padding:10px; color:#fff; text-align:center;
+                font-family:system-ui,Arial; pointer-events:none; z-index:2; }
     .btn      { position:fixed; left:50%; bottom:14px; transform:translateX(-50%);
                 padding:10px 14px; background:#fff; border-radius:6px; font-weight:600; z-index:2; }
   </style>
@@ -29,12 +26,12 @@
   <a-scene id="scene"
     embedded
     mindar-image="imageTargetSrc: https://test13578.netlify.app/targets/targets.mind; autoStart: false;"
-    renderer="alpha: true; antialias: true; precision: mediump; powerPreference: high-performance; colorManagement: true"
+    renderer="alpha: false; antialias: false; precision: highp; colorManagement: false; physicallyCorrectLights: false; powerPreference: default"
     vr-mode-ui="enabled: false"
     device-orientation-permission-ui="enabled: true">
     <a-camera position="0 0 0" look-controls="enabled: false"></a-camera>
 
-    <!-- If your .mind has multiple images, set targetIndex accordingly -->
+    <!-- If your .mind has multiple images, change targetIndex accordingly -->
     <a-entity mindar-image-target="targetIndex: 0" id="marker0">
       <a-video id="vidPlane" src="#v1" width="1" height="0.56" position="0 0 0"></a-video>
     </a-entity>
@@ -50,7 +47,6 @@
     (async () => {
       try { const s = await navigator.mediaDevices.getUserMedia({ video: { facingMode: "environment" } });
             s.getTracks().forEach(t => t.stop()); } catch {}
-
     })();
 
     // One tap to allow audio (mobile autoplay policy)
@@ -69,7 +65,8 @@
 
     scene.addEventListener('arReady', () => { startMindAR(); });
     scene.addEventListener('arError', e => console.warn('MindAR arError', e.detail));
-    // Safety fallback in case timing is odd
+
+    // Safety fallback (timing quirk guard)
     setTimeout(() => startMindAR(), 1200);
 
     // Play overlay video when target is found
