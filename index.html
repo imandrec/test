@@ -3,63 +3,115 @@
 <head>
   <meta charset="utf-8" />
   <meta name="viewport" content="width=device-width,initial-scale=1,maximum-scale=1,user-scalable=no" />
-  <title>WebAR (MindAR + Three)</title>
+  <title>WebAR – Video + Holographic Text</title>
 
-  <!-- Three.js + MindAR (no A-Frame) -->
+  <!-- Three.js + MindAR -->
   <script src="https://cdn.jsdelivr.net/npm/three@0.150.1/build/three.min.js"></script>
   <script src="https://cdn.jsdelivr.net/npm/mind-ar@1.2.5/dist/mindar-image-three.prod.js"></script>
+  <!-- Load font utilities for 3D text -->
+  <script type="module" src="https://cdn.jsdelivr.net/npm/three@0.150.1/examples/jsm/loaders/FontLoader.js"></script>
+  <script type="module" src="https://cdn.jsdelivr.net/npm/three@0.150.1/examples/jsm/geometries/TextGeometry.js"></script>
 
   <style>
     html,body {margin:0;height:100%;background:#000;overflow:hidden;}
     #app {position:fixed;inset:0;}
-    .hint {position:fixed;left:0;right:0;top:0;padding:10px;color:#fff;text-align:center;font-family:system-ui,Arial;z-index:10;pointer-events:none;}
-    .btn  {position:fixed;left:50%;bottom:14px;transform:translateX(-50%);padding:10px 14px;background:#fff;border-radius:6px;font-weight:600;z-index:10;}
+    .hint {
+      position:fixed;left:0;right:0;top:0;
+      padding:10px;color:#fff;text-align:center;
+      font-family:system-ui,Arial;z-index:10;pointer-events:none;
+    }
+    .btn  {
+      position:fixed;left:50%;bottom:14px;transform:translateX(-50%);
+      padding:10px 14px;background:#fff;border-radius:6px;font-weight:600;z-index:10;
+    }
   </style>
 </head>
 <body>
   <div class="hint">Point your camera at the picture.</div>
   <button id="startBtn" class="btn">Tap to enable sound</button>
-  <!-- AR video texture -->
+
+  <!-- Hidden video used as texture -->
   <video id="v1" src="video.mp4" preload="auto" playsinline webkit-playsinline muted loop style="display:none"></video>
   <div id="app"></div>
 
-  <script>
+  <script type="module">
+    import { FontLoader } from 'https://cdn.jsdelivr.net/npm/three@0.150.1/examples/jsm/loaders/FontLoader.js';
+    import { TextGeometry } from 'https://cdn.jsdelivr.net/npm/three@0.150.1/examples/jsm/geometries/TextGeometry.js';
+
     (async () => {
       const startBtn = document.getElementById('startBtn');
       const app = document.getElementById('app');
+
+      // --- MindAR init ---
       const mindarThree = new window.MINDAR.IMAGE.MindARThree({
         container: app,
-        imageTargetSrc: `${location.origin}/targets/targets.mind`, // <-- uses your domain
+        imageTargetSrc: 'targets/targets.mind',
         uiScanning: true,
-        filterMinCF: 0.0001, filterBeta: 0.01
+        filterMinCF: 0.0001,
+        filterBeta: 0.01
       });
-      const {renderer, scene, camera} = mindarThree;
+      const { renderer, scene, camera } = mindarThree;
 
-      // plane that will show video.mp4 when target is found
+      // --- Video plane ---
       const v = document.getElementById('v1');
       const texture = new THREE.VideoTexture(v);
       texture.colorSpace = THREE.SRGBColorSpace;
-      const geometry = new THREE.PlaneGeometry(1, 0.56); // adjust aspect to your video
+      const geometry = new THREE.PlaneGeometry(1, 0.56); // 16:9 aspect
       const material = new THREE.MeshBasicMaterial({ map: texture, side: THREE.DoubleSide, transparent: true });
       const plane = new THREE.Mesh(geometry, material);
+      plane.position.set(0, 0, 0.01);
 
-      const anchor = mindarThree.addAnchor(0); // targetIndex 0
+      const anchor = mindarThree.addAnchor(0);
       anchor.group.add(plane);
 
-      // play/pause video on tracking events
-      anchor.onTargetFound = async () => { try { await v.play(); } catch(e) {} };
+      // --- Holographic 3D text ---
+      const fontLoader = new FontLoader();
+      const font = await new Promise(resolve =>
+        fontLoader.load('https://threejs.org/examples/fonts/helvetiker_regular.typeface.json', resolve)
+      );
+
+      const textGeo = new TextGeometry('Forever ❤️', {
+        font: font,
+        size: 0.12,
+        height: 0.01,
+        curveSegments: 12,
+      });
+      const textMat = new THREE.MeshBasicMaterial({
+        color: 0x00ffff,
+        transparent: true,
+        opacity: 0.8
+      });
+      const textMesh = new THREE.Mesh(textGeo, textMat);
+      textMesh.position.set(-0.3, 0.4, 0.1); // X,Y,Z position (above the video)
+      anchor.group.add(textMesh);
+
+      // --- Gentle floating animation ---
+      const clock = new THREE.Clock();
+
+      // Play video when target is found
+      anchor.onTargetFound = async () => { try { await v.play(); } catch(e){} };
       anchor.onTargetLost  = () => { /* v.pause(); */ };
 
-      // iOS audio policy: one user gesture to unmute
+      // --- iOS audio unmute requirement ---
       startBtn.addEventListener('click', async () => {
         try { v.muted = false; await v.play(); } catch(e) {}
         startBtn.style.display = 'none';
       }, {once:true});
 
-      // start AR
+      // --- Start AR ---
       await mindarThree.start();
-      renderer.setAnimationLoop(() => { renderer.render(scene, camera); });
-    })();
+
+      renderer.setAnimationLoop(() => {
+        const t = clock.getElapsedTime();
+        // make the text float softly
+        textMesh.position.y = 0.4 + Math.sin(t * 2) * 0.02;
+        textMesh.material.opacity = 0.7 + Math.sin(t * 3) * 0.1;
+        renderer.render(scene, camera);
+      });
+    })().catch(err => {
+      alert('AR init error: ' + (err?.message || err));
+      console.error(err);
+    });
   </script>
 </body>
 </html>
