@@ -11,7 +11,7 @@
     .btn  {position:fixed;left:50%;bottom:14px;transform:translateX(-50%);padding:10px 14px;background:#fff;border-radius:6px;font-weight:600;z-index:10;}
   </style>
 
-  <!-- Order matters: THREE first, then MindAR UMD -->
+  <!-- UMD bundles: NO imports anywhere below -->
   <script src="https://unpkg.com/three@0.150.1/build/three.min.js"></script>
   <script src="https://unpkg.com/mind-ar@1.2.5/dist/mindar-image-three.prod.js"></script>
 </head>
@@ -24,43 +24,52 @@
 
   <script>
     (async () => {
+      // Sanity: make sure the target file is reachable
+      const t = await fetch('targets/targets.mind', { cache: 'no-store' });
+      if (!t.ok) { alert('Cannot load targets/targets.mind'); return; }
+
       const app = document.getElementById('app');
       const startBtn = document.getElementById('startBtn');
 
-      // sanity
-      const t = await fetch('targets/targets.mind', {cache:'no-store'});
-      if (!t.ok) { alert('Cannot load targets/targets.mind'); return; }
-
+      // Use the global UMD namespace
       const mindarThree = new window.MINDAR.IMAGE.MindARThree({
         container: app,
         imageTargetSrc: 'targets/targets.mind',
         uiScanning: true,
-        filterMinCF: 0.0001, filterBeta: 0.01
+        filterMinCF: 0.0001,
+        filterBeta: 0.01
       });
-      const {renderer, scene, camera} = mindarThree;
 
+      const { renderer, scene, camera } = mindarThree;
+
+      // Video plane (16:9). Change 0.56 if your video aspect is different
       const v = document.getElementById('v1');
       const texture = new THREE.VideoTexture(v);
       texture.colorSpace = THREE.SRGBColorSpace;
 
       const plane = new THREE.Mesh(
         new THREE.PlaneGeometry(1, 9/16),
-        new THREE.MeshBasicMaterial({map: texture, side: THREE.DoubleSide, transparent: true})
+        new THREE.MeshBasicMaterial({ map: texture, side: THREE.DoubleSide, transparent: true })
       );
-      plane.position.set(0,0,0.01);
+      plane.position.set(0, 0, 0.01);
 
       const anchor = mindarThree.addAnchor(0);
       anchor.group.add(plane);
 
-      anchor.onTargetFound = async () => { try { await v.play(); } catch(e){} };
+      anchor.onTargetFound = async () => { try { await v.play(); } catch(e) {} };
+      anchor.onTargetLost  = () => {};
+
       startBtn.addEventListener('click', async () => {
-        try { v.muted = false; await v.play(); } catch(e){}
-        startBtn.style.display='none';
-      }, {once:true});
+        try { v.muted = false; await v.play(); } catch(e) {}
+        startBtn.style.display = 'none';
+      }, { once:true });
 
       await mindarThree.start();
       renderer.setAnimationLoop(() => renderer.render(scene, camera));
-    })();
+    })().catch(err => {
+      console.error(err);
+      alert('Init error: ' + (err?.message || err));
+    });
   </script>
 </body>
 </html>
