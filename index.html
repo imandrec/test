@@ -3,80 +3,54 @@
 <head>
   <meta charset="utf-8" />
   <meta name="viewport" content="width=device-width,initial-scale=1,maximum-scale=1,user-scalable=no" />
-  <title>WebAR – ESM via esm.sh</title>
+  <title>AR Marker Demo</title>
   <style>
     html,body {margin:0;height:100%;background:#000;overflow:hidden;}
     #app {position:fixed;inset:0;}
-    .hint {position:fixed;left:0;right:0;top:0;padding:10px;color:#fff;text-align:center;font-family:system-ui,Arial;z-index:10;pointer-events:none;}
-    .btn  {position:fixed;left:50%;bottom:14px;transform:translateX(-50%);padding:10px 14px;background:#fff;border-radius:6px;font-weight:600;z-index:10;}
-    #log  {position:fixed;left:8px;bottom:8px;color:#0f0;font:11px monospace;white-space:pre;z-index:20;}
+    .hint {position:fixed;left:0;right:0;top:0;padding:10px;color:#fff;text-align:center;font-family:system-ui;z-index:10;pointer-events:none;}
   </style>
+  <!-- UMD builds (no modules, no npm) -->
+  <script src="https://cdn.jsdelivr.net/npm/three@0.150.1/build/three.min.js"></script>
+  <script src="https://cdn.jsdelivr.net/npm/mind-ar@1.2.5/dist/mindar-image-three.prod.js"></script>
 </head>
 <body>
-  <div class="hint">Point your camera at the picture.</div>
-  <button id="startBtn" class="btn">Tap to enable sound</button>
-  <div id="log">loading…</div>
-
-  <!-- Hidden video used as texture -->
-  <video id="v1" src="video.mp4" preload="auto" playsinline webkit-playsinline muted loop style="display:none"></video>
+  <div class="hint">Point your camera at the printed tag.</div>
   <div id="app"></div>
 
-  <script type="module">
-    // ESM imports with proper CORS headers
-    import * as THREE from "https://esm.sh/three@0.150.1";
-    import { MindARThree } from "https://esm.sh/mind-ar@1.2.5/dist/mindar-image-three.module.js";
-
-    const log = (m)=>{ const el=document.getElementById('log'); el.textContent += `\n${m}`; console.log(m); };
-
+  <script>
     (async () => {
-      // 1) sanity check: make sure your targets file is reachable
-      const targetsRes = await fetch('targets/targets.mind', { cache:'no-store' });
-      log(`targets: ${targetsRes.status}`);
-      if (!targetsRes.ok) throw new Error('Cannot load targets/targets.mind');
+      // 1) Sanity: target file reachable?
+      const ping = await fetch('targets/targets.mind', {cache:'no-store'});
+      if (!ping.ok) { alert('targets/targets.mind not found'); return; }
 
-      const app = document.getElementById('app');
-      const startBtn = document.getElementById('startBtn');
-
-      // 2) MindAR init (module build)
-      const mindarThree = new MindARThree({
-        container: app,
-        imageTargetSrc: 'targets/targets.mind', // RELATIVE path
-        uiScanning: true,
-        filterMinCF: 0.0001,
-        filterBeta: 0.01
+      // 2) Init MindAR
+      const mindarThree = new window.MINDAR.IMAGE.MindARThree({
+        container: document.getElementById('app'),
+        imageTargetSrc: 'targets/targets.mind',
+        uiScanning: true
       });
       const { renderer, scene, camera } = mindarThree;
 
-      // 3) Simple 16:9 video plane
-      const v = document.getElementById('v1');
-      const tex = new THREE.VideoTexture(v);
-      tex.colorSpace = THREE.SRGBColorSpace;
-
-      const plane = new THREE.Mesh(
-        new THREE.PlaneGeometry(1, 9/16),
-        new THREE.MeshBasicMaterial({ map: tex, side: THREE.DoubleSide, transparent: true })
+      // 3) Add something obvious: a floating torus (visible on all phones)
+      const anchor = mindarThree.addAnchor(0); // first image in your targets.mind
+      const knot = new THREE.Mesh(
+        new THREE.TorusKnotGeometry(0.35, 0.12, 128, 32),
+        new THREE.MeshStandardMaterial({ color: 0x00ffff, metalness: 0.6, roughness: 0.3 })
       );
-      plane.position.set(0, 0, 0.01);
+      const light = new THREE.DirectionalLight(0xffffff, 1);
+      light.position.set(1,1,1);
+      anchor.group.add(knot);
+      anchor.group.add(light);
+      anchor.group.add(new THREE.AmbientLight(0xffffff, 0.4));
 
-      const anchor = mindarThree.addAnchor(0);
-      anchor.group.add(plane);
-
-      anchor.onTargetFound = async () => { log('target found → play'); try { await v.play(); } catch(e){ log('video play error: '+e.message); } };
-      anchor.onTargetLost  = () => { log('target lost'); };
-
-      startBtn.addEventListener('click', async () => {
-        try { v.muted = false; await v.play(); } catch(e){ log('unmute/play error: '+e.message); }
-        startBtn.style.display = 'none';
-      }, { once:true });
-
-      // 4) Start AR
+      // 4) Start
       await mindarThree.start();
-      log('mindar started (camera should be visible)');
-      renderer.setAnimationLoop(() => renderer.render(scene, camera));
-    })().catch(err => {
-      log('ERROR: ' + (err?.message || err));
-      alert('Init error: ' + (err?.message || err));
-    });
+      renderer.setAnimationLoop(() => {
+        knot.rotation.x += 0.01;
+        knot.rotation.y += 0.015;
+        renderer.render(scene, camera);
+      });
+    })().catch(e => { console.error(e); alert(e.message || e); });
   </script>
 </body>
 </html>
