@@ -16,142 +16,124 @@
   <video id="cam" autoplay playsinline webkit-playsinline muted></video>
   <div class="badge" id="log"></div>
 
-  <script>
-    const log = (m)=>{ const el=document.getElementById('log'); el.textContent = String(m); };
+<script>
+  const log = (m)=>{ const el=document.getElementById('log'); if (el) el.textContent = String(m); console.log(m); };
 
-    // --- 1) Camera feed
-    const camEl = document.getElementById('cam');
-    (async () => {
-      try {
-        const stream = await navigator.mediaDevices.getUserMedia({
-          video: { facingMode: { ideal: "environment" } }, audio: false
-        });
-        camEl.srcObject = stream;
-      } catch (e) {
-        alert('Camera error: ' + (e.name || '') + ' ' + (e.message || e));
-        console.warn(e);
-      }
-    })();
-
-    // --- 2) Three.js overlay (transparent)
-    const scene = new THREE.Scene();
-    const camera = new THREE.PerspectiveCamera(60, innerWidth/innerHeight, 0.01, 100);
-    camera.position.z = 2;
-
-    const renderer = new THREE.WebGLRenderer({alpha:true, antialias:true});
-    renderer.setSize(innerWidth, innerHeight);
-    renderer.domElement.className = "webgl";
-    document.body.appendChild(renderer.domElement);
-
-    // Object (torus) we'll show/hide based on QR proximity
-    const torus = new THREE.Mesh(
-      new THREE.TorusKnotGeometry(0.5, 0.15, 128, 32),
-      new THREE.MeshStandardMaterial({ color: 0x00ffff, metalness: 0.6, roughness: 0.3 })
-    );
-    scene.add(torus);
-    scene.add(new THREE.DirectionalLight(0xffffff, 1).position.set(1,1,1));
-    scene.add(new THREE.AmbientLight(0xffffff, 0.4));
-
-    // Render loop
-    let visible = false;
-    function animate(){
-      // Only animate if "visible"
-      torus.visible = visible;
-      if (visible) {
-        torus.rotation.x += 0.01;
-        torus.rotation.y += 0.015;
-        torus.position.y = Math.sin(Date.now()*0.001)*0.1;
-      }
-      renderer.render(scene, camera);
-      requestAnimationFrame(animate);
+  // 1️⃣ Camera feed
+  const camEl = document.getElementById('cam');
+  (async () => {
+    try {
+      const stream = await navigator.mediaDevices.getUserMedia({
+        video: { facingMode: { ideal: "environment" } }, audio: false
+      });
+      camEl.srcObject = stream;
+    } catch (e) {
+      alert('Camera error: ' + (e.name || '') + ' ' + (e.message || e));
+      console.warn(e);
     }
-    animate();
+  })();
 
-    // Resize
-    addEventListener('resize', () => {
-      camera.aspect = innerWidth/innerHeight;
-      camera.updateProjectionMatrix();
-      renderer.setSize(innerWidth, innerHeight);
-    });
+  // 2️⃣ Three.js overlay
+  const scene = new THREE.Scene();
+  const camera = new THREE.PerspectiveCamera(60, innerWidth/innerHeight, 0.01, 100);
+  camera.position.z = 2;
 
-    // --- 3) QR gating logic (no libs)
-    // Configure which QR text to accept
-    const REQUIRED_QR_TEXT = 'BRACELET123';   // <-- change this per item
-    const AREA_NEAR_THRESHOLD = 0.06;         // 6% of video area => "close"
-    const AREA_FAR_THRESHOLD  = 0.04;         // 4% => hysteresis to avoid flicker
-    let smoothArea = 0;                       // EMA smoothing
-    let lastSeenOK = 0;
+  const renderer = new THREE.WebGLRenderer({alpha:true, antialias:true});
+  renderer.setSize(innerWidth, innerHeight);
+  renderer.domElement.className = "webgl";
+  document.body.appendChild(renderer.domElement);
 
-    async function startQRLoop() {
-      if (!('BarcodeDetector' in window)) {
-        log('No BarcodeDetector; showing object (fallback).');
-        visible = true;  // or set false if you prefer hidden when unsupported
-        return;
-      }
+  // 3️⃣ Create object (hidden by default)
+  const torus = new THREE.Mesh(
+    new THREE.TorusKnotGeometry(0.5, 0.15, 128, 32),
+    new THREE.MeshStandardMaterial({ color: 0x00ffff, metalness: 0.6, roughness: 0.3 })
+  );
+  torus.visible = false;   // start hidden
+  scene.add(torus);
+  scene.add(new THREE.DirectionalLight(0xffffff, 1).position.set(1,1,1));
+  scene.add(new THREE.AmbientLight(0xffffff, 0.4));
 
-      const detector = new BarcodeDetector({ formats: ['qr_code'] });
-      log('Scanning for QR…');
+  // 4️⃣ Animate
+  function animate(){
+    if (torus.visible) {
+      torus.rotation.x += 0.01;
+      torus.rotation.y += 0.015;
+      torus.position.y = Math.sin(Date.now()*0.001)*0.1;
+    }
+    renderer.render(scene, camera);
+    requestAnimationFrame(animate);
+  }
+  animate();
 
-      const loop = async () => {
-        try {
-          // Some browsers let you pass the <video> directly
-          const codes = await detector.detect(camEl);
+  // 5️⃣ Resize
+  addEventListener('resize', () => {
+    camera.aspect = innerWidth/innerHeight;
+    camera.updateProjectionMatrix();
+    renderer.setSize(innerWidth, innerHeight);
+  });
 
-          let show = false;
-          let msg = 'No QR';
+  // 6️⃣ QR gating
+  const REQUIRED_QR_TEXT = 'BRACELET123';
+  const AREA_NEAR_THRESHOLD = 0.06;
+  const AREA_FAR_THRESHOLD  = 0.04;
+  let smoothArea = 0;
+  let lastSeenOK = 0;
+  let detector = null;
 
-          if (codes && codes.length) {
-            // Pick the best match (by area) that also matches the required text (if set)
-            const vW = camEl.videoWidth || innerWidth;
-            const vH = camEl.videoHeight || innerHeight;
-            const frameArea = vW * vH;
+  async function startQRLoop() {
+    if (!('BarcodeDetector' in window)) {
+      log('No BarcodeDetector; keeping hidden.');
+      torus.visible = false;
+      return;
+    }
 
-            let best = null;
-            for (const c of codes) {
-              const txt = (c.rawValue || '').trim();
-              const bb = c.boundingBox || {};
-              const area = (bb.width || 0) * (bb.height || 0);
-              if (!best || area > best.area) best = { txt, area, bb };
-            }
+    detector = new BarcodeDetector({ formats: ['qr_code'] });
+    log('Ready for QR...');
 
-            if (best) {
-              // If you want to accept ANY QR, set REQUIRED_QR_TEXT = ''.
-              const matches = !REQUIRED_QR_TEXT || best.txt === REQUIRED_QR_TEXT;
-              const areaRatio = best.area / (frameArea || 1);
-              // Smooth area to reduce flicker
-              smoothArea = smoothArea * 0.8 + areaRatio * 0.2;
+    const loop = async () => {
+      try {
+        const codes = await detector.detect(camEl);
+        let found = false;
 
-              const near = smoothArea >= AREA_NEAR_THRESHOLD;
-              const far  = smoothArea <= AREA_FAR_THRESHOLD;
+        if (codes && codes.length) {
+          const vW = camEl.videoWidth || innerWidth;
+          const vH = camEl.videoHeight || innerHeight;
+          const frameArea = vW * vH;
+          let best = null;
 
-              // Hysteresis: once near, stay near until we fall below FAR threshold
-              if (matches) {
-                if (near) { show = true; lastSeenOK = Date.now(); }
-                else if (!far && (Date.now() - lastSeenOK) < 800) { show = true; } // grace period
-              }
-
-              // Optional: scale the object based on distance proxy
-              // (bigger QR area => closer => bigger torus)
-              const scale = THREE.MathUtils.clamp(0.8 + smoothArea*6, 0.8, 2.2);
-              torus.scale.set(scale, scale, scale);
-
-              msg = `QR "${best.txt}" area ${(smoothArea*100).toFixed(1)}% → ${show?'NEAR':'FAR'}`;
-            }
+          for (const c of codes) {
+            const txt = (c.rawValue || '').trim();
+            const bb = c.boundingBox || {};
+            const area = (bb.width || 0) * (bb.height || 0);
+            if (!best || area > best.area) best = { txt, area };
           }
 
-          visible = show;
-          log(msg);
-        } catch (e) {
-          // If detect() throws intermittently, keep last state
-          console.warn(e);
-        }
-        requestAnimationFrame(loop);
-      };
-      loop();
-    }
+          if (best && (!REQUIRED_QR_TEXT || best.txt === REQUIRED_QR_TEXT)) {
+            const areaRatio = best.area / (frameArea || 1);
+            smoothArea = smoothArea * 0.8 + areaRatio * 0.2;
+            const near = smoothArea >= AREA_NEAR_THRESHOLD;
+            const far  = smoothArea <= AREA_FAR_THRESHOLD;
+            if (near) { found = true; lastSeenOK = Date.now(); }
+            else if (!far && Date.now() - lastSeenOK < 800) found = true;
 
-    // Start QR after the video actually has dimensions
-    camEl.addEventListener('loadedmetadata', startQRLoop, { once:true });
-  </script>
+            const scale = THREE.MathUtils.clamp(0.8 + smoothArea*6, 0.8, 2.2);
+            torus.scale.set(scale, scale, scale);
+            log(`QR:${best.txt} ${(smoothArea*100).toFixed(1)}% → ${found?'SHOW':'hide'}`);
+          }
+        }
+
+        // apply visibility only when QR is actually found
+        torus.visible = found;
+      } catch(e) {
+        console.warn(e);
+      }
+      requestAnimationFrame(loop);
+    };
+    loop();
+  }
+
+  camEl.addEventListener('loadedmetadata', startQRLoop, {once:true});
+</script>
+
 </body>
 </html>
