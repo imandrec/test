@@ -3,22 +3,19 @@
 <head>
   <meta charset="utf-8" />
   <meta name="viewport" content="width=device-width,initial-scale=1" />
-  <title>Camera + 3D Text</title>
+  <title>Camera + Floating 3D Object</title>
   <style>
     html,body {margin:0;height:100%;background:#000;overflow:hidden}
     video {position:fixed;inset:0;width:100%;height:100%;object-fit:cover}
-    canvas.webgl {position:fixed;inset:0;pointer-events:none} /* overlay */
+    canvas.webgl {position:fixed;inset:0;pointer-events:none}
   </style>
-  <!-- three.js (UMD) + non-module example helpers -->
   <script src="https://cdn.jsdelivr.net/npm/three@0.150.1/build/three.min.js"></script>
-  <script src="https://cdn.jsdelivr.net/npm/three@0.150.1/examples/js/loaders/FontLoader.js"></script>
-  <script src="https://cdn.jsdelivr.net/npm/three@0.150.1/examples/js/geometries/TextGeometry.js"></script>
 </head>
 <body>
   <video id="cam" autoplay playsinline webkit-playsinline muted></video>
 
   <script>
-    // 1) Start camera
+    // 1️⃣ Camera feed
     (async () => {
       try {
         const stream = await navigator.mediaDevices.getUserMedia({
@@ -31,49 +28,39 @@
       }
     })();
 
-    // 2) Minimal Three.js overlay (transparent)
+    // 2️⃣ Three.js scene overlay
     const scene = new THREE.Scene();
     const camera = new THREE.PerspectiveCamera(60, innerWidth/innerHeight, 0.01, 100);
-    camera.position.z = 1.6;
+    camera.position.z = 2;
 
-    const renderer = new THREE.WebGLRenderer({ antialias:true, alpha:true });
-    renderer.setPixelRatio(Math.min(devicePixelRatio, 2));
+    const renderer = new THREE.WebGLRenderer({alpha:true, antialias:true});
     renderer.setSize(innerWidth, innerHeight);
-    renderer.domElement.className = 'webgl';
+    renderer.domElement.className = "webgl";
     document.body.appendChild(renderer.domElement);
 
-    // Soft ambient light for the text
-    scene.add(new THREE.AmbientLight(0xffffff, 1));
+    // 3️⃣ Add some visible floating 3D shapes (guaranteed to render)
+    const geometry = new THREE.TorusKnotGeometry(0.5, 0.15, 128, 32);
+    const material = new THREE.MeshStandardMaterial({ color: 0x00ffff, metalness: 0.6, roughness: 0.3 });
+    const torus = new THREE.Mesh(geometry, material);
+    scene.add(torus);
 
-    // 3) Load a font and create the floating text
-    const loader = new THREE.FontLoader();
-    loader.load('https://threejs.org/examples/fonts/helvetiker_regular.typeface.json', (font) => {
-      const geo = new THREE.TextGeometry('Forever ❤', {
-        font, size: 0.2, height: 0.02, curveSegments: 12
-      });
-      geo.computeBoundingBox();
-      // center the text
-      const xMid = -0.5 * (geo.boundingBox.max.x - geo.boundingBox.min.x);
-      geo.translate(xMid, 0, 0);
+    // lights
+    const light = new THREE.DirectionalLight(0xffffff, 1);
+    light.position.set(1,1,1);
+    scene.add(light);
+    scene.add(new THREE.AmbientLight(0xffffff, 0.4));
 
-      const mat = new THREE.MeshBasicMaterial({ color: 0x00ffff, transparent:true, opacity:0.9 });
-      const text = new THREE.Mesh(geo, mat);
-      text.position.set(0, 0, 0);
-      scene.add(text);
+    // 4️⃣ Animate
+    function animate(){
+      torus.rotation.x += 0.01;
+      torus.rotation.y += 0.015;
+      torus.position.y = Math.sin(Date.now()*0.001)*0.1;
+      renderer.render(scene, camera);
+      requestAnimationFrame(animate);
+    }
+    animate();
 
-      // animate: gentle float + slow rotation
-      const clock = new THREE.Clock();
-      (function animate(){
-        const t = clock.getElapsedTime();
-        text.position.y = 0.1 + Math.sin(t*2)*0.02;
-        text.rotation.y = Math.sin(t*0.5)*0.3;
-        mat.opacity = 0.8 + Math.sin(t*3)*0.1;
-        renderer.render(scene, camera);
-        requestAnimationFrame(animate);
-      })();
-    });
-
-    // 4) Handle resize
+    // 5️⃣ Handle resize
     addEventListener('resize', () => {
       camera.aspect = innerWidth/innerHeight;
       camera.updateProjectionMatrix();
