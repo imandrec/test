@@ -3,73 +3,64 @@
 <head>
   <meta charset="utf-8" />
   <meta name="viewport" content="width=device-width,initial-scale=1,maximum-scale=1,user-scalable=no" />
-  <title>WebAR – ESM Clean</title>
+  <title>WebAR – UMD (no modules)</title>
   <style>
     html,body {margin:0;height:100%;background:#000;overflow:hidden;}
     #app {position:fixed;inset:0;}
     .hint {position:fixed;left:0;right:0;top:0;padding:10px;color:#fff;text-align:center;font-family:system-ui,Arial;z-index:10;pointer-events:none;}
     .btn  {position:fixed;left:50%;bottom:14px;transform:translateX(-50%);padding:10px 14px;background:#fff;border-radius:6px;font-weight:600;z-index:10;}
-    #log  {position:fixed;left:8px;bottom:8px;color:#0f0;font:11px monospace;white-space:pre;z-index:20;}
   </style>
+
+  <!-- Order matters: THREE first, then MindAR UMD -->
+  <script src="https://unpkg.com/three@0.150.1/build/three.min.js"></script>
+  <script src="https://unpkg.com/mind-ar@1.2.5/dist/mindar-image-three.prod.js"></script>
 </head>
 <body>
   <div class="hint">Point your camera at the picture.</div>
   <button id="startBtn" class="btn">Tap to enable sound</button>
-  <div id="log">loading…</div>
 
   <video id="v1" src="video.mp4" preload="auto" playsinline webkit-playsinline muted loop style="display:none"></video>
   <div id="app"></div>
 
-  <script type="module">
-    import * as THREE from 'https://unpkg.com/three@0.150.1/build/three.module.js';
-    import { MindARThree } from 'https://unpkg.com/mind-ar@1.2.5/dist/mindar-image-three.module.js';
-
-    const log = (m)=>{ const el=document.getElementById('log'); el.textContent += `\n${m}`; console.log(m); };
-
+  <script>
     (async () => {
-      // verify targets.mind is reachable (and _headers works)
-      const res = await fetch('targets/targets.mind', {cache:'no-store'});
-      log(`targets: ${res.status}`); if(!res.ok) throw new Error('cannot load targets.mind');
-
       const app = document.getElementById('app');
       const startBtn = document.getElementById('startBtn');
 
-      const mindarThree = new MindARThree({
+      // sanity
+      const t = await fetch('targets/targets.mind', {cache:'no-store'});
+      if (!t.ok) { alert('Cannot load targets/targets.mind'); return; }
+
+      const mindarThree = new window.MINDAR.IMAGE.MindARThree({
         container: app,
-        imageTargetSrc: 'targets/targets.mind', // RELATIVE path
+        imageTargetSrc: 'targets/targets.mind',
         uiScanning: true,
         filterMinCF: 0.0001, filterBeta: 0.01
       });
-      const { renderer, scene, camera } = mindarThree;
+      const {renderer, scene, camera} = mindarThree;
 
-      // simple video plane (16:9)
       const v = document.getElementById('v1');
-      const tex = new THREE.VideoTexture(v);
-      tex.colorSpace = THREE.SRGBColorSpace;
+      const texture = new THREE.VideoTexture(v);
+      texture.colorSpace = THREE.SRGBColorSpace;
+
       const plane = new THREE.Mesh(
         new THREE.PlaneGeometry(1, 9/16),
-        new THREE.MeshBasicMaterial({ map: tex, side: THREE.DoubleSide, transparent: true })
+        new THREE.MeshBasicMaterial({map: texture, side: THREE.DoubleSide, transparent: true})
       );
       plane.position.set(0,0,0.01);
 
       const anchor = mindarThree.addAnchor(0);
       anchor.group.add(plane);
 
-      anchor.onTargetFound = async ()=>{ log('target found → play'); try{ await v.play(); }catch(e){ log(e.message);} };
-      anchor.onTargetLost  = ()=>{ log('target lost'); };
-
-      startBtn.addEventListener('click', async ()=>{
-        try{ v.muted=false; await v.play(); }catch(e){ log(e.message); }
+      anchor.onTargetFound = async () => { try { await v.play(); } catch(e){} };
+      startBtn.addEventListener('click', async () => {
+        try { v.muted = false; await v.play(); } catch(e){}
         startBtn.style.display='none';
       }, {once:true});
 
       await mindarThree.start();
-      log('mindar started'); // camera should be visible
-      renderer.setAnimationLoop(()=>renderer.render(scene,camera));
-    })().catch(e=>{
-      log('ERROR: ' + (e?.message||e));
-      alert('Init error: ' + (e?.message||e));
-    });
+      renderer.setAnimationLoop(() => renderer.render(scene, camera));
+    })();
   </script>
 </body>
 </html>
