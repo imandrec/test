@@ -3,7 +3,7 @@
 <head>
   <meta charset="utf-8" />
   <meta name="viewport" content="width=device-width,initial-scale=1,maximum-scale=1,user-scalable=no" />
-  <title>WebAR – UMD (no modules)</title>
+  <title>WebAR – Fixed UMD</title>
   <style>
     html,body {margin:0;height:100%;background:#000;overflow:hidden;}
     #app {position:fixed;inset:0;}
@@ -11,9 +11,9 @@
     .btn  {position:fixed;left:50%;bottom:14px;transform:translateX(-50%);padding:10px 14px;background:#fff;border-radius:6px;font-weight:600;z-index:10;}
   </style>
 
-  <!-- UMD bundles: NO imports anywhere below -->
-  <script src="https://unpkg.com/three@0.150.1/build/three.min.js"></script>
-  <script src="https://unpkg.com/mind-ar@1.2.5/dist/mindar-image-three.prod.js"></script>
+  <!-- ✅ Correct CDN links -->
+  <script src="https://cdn.jsdelivr.net/npm/three@0.150.1/build/three.min.js"></script>
+  <script src="https://cdn.jsdelivr.net/npm/mind-ar@1.2.5/dist/mindar-image-three.prod.js"></script>
 </head>
 <body>
   <div class="hint">Point your camera at the picture.</div>
@@ -24,41 +24,32 @@
 
   <script>
     (async () => {
-      // Sanity: make sure the target file is reachable
-      const t = await fetch('targets/targets.mind', { cache: 'no-store' });
-      if (!t.ok) { alert('Cannot load targets/targets.mind'); return; }
-
       const app = document.getElementById('app');
       const startBtn = document.getElementById('startBtn');
 
-      // Use the global UMD namespace
+      // ✅ MindAR global now exists
       const mindarThree = new window.MINDAR.IMAGE.MindARThree({
         container: app,
         imageTargetSrc: 'targets/targets.mind',
-        uiScanning: true,
-        filterMinCF: 0.0001,
-        filterBeta: 0.01
+        uiScanning: true
       });
 
       const { renderer, scene, camera } = mindarThree;
 
-      // Video plane (16:9). Change 0.56 if your video aspect is different
       const v = document.getElementById('v1');
       const texture = new THREE.VideoTexture(v);
       texture.colorSpace = THREE.SRGBColorSpace;
 
       const plane = new THREE.Mesh(
         new THREE.PlaneGeometry(1, 9/16),
-        new THREE.MeshBasicMaterial({ map: texture, side: THREE.DoubleSide, transparent: true })
+        new THREE.MeshBasicMaterial({ map: texture, side: THREE.DoubleSide })
       );
       plane.position.set(0, 0, 0.01);
 
       const anchor = mindarThree.addAnchor(0);
       anchor.group.add(plane);
 
-      anchor.onTargetFound = async () => { try { await v.play(); } catch(e) {} };
-      anchor.onTargetLost  = () => {};
-
+      anchor.onTargetFound = async () => { try { await v.play(); } catch(e){} };
       startBtn.addEventListener('click', async () => {
         try { v.muted = false; await v.play(); } catch(e) {}
         startBtn.style.display = 'none';
