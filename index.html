@@ -3,137 +3,48 @@
 <head>
   <meta charset="utf-8" />
   <meta name="viewport" content="width=device-width,initial-scale=1" />
-  <title>Camera + Floating 3D Object (QR-gated)</title>
+  <title>AR Image Tracking</title>
+
+  <script src="https://aframe.io/releases/1.5.0/aframe.min.js"></script>
+  <script src="https://cdn.jsdelivr.net/npm/mind-ar@1.2.5/dist/mindar-image-aframe.prod.js"></script>
+
   <style>
-    html,body {margin:0;height:100%;background:#000;overflow:hidden}
-    video {position:fixed;inset:0;width:100%;height:100%;object-fit:cover}
-    canvas.webgl {position:fixed;inset:0;pointer-events:none}
-    .badge {position:fixed;left:8px;bottom:8px;color:#0f0;font:12px/1.4 monospace;z-index:20;white-space:pre}
+    html, body { margin:0; height:100%; overflow:hidden; background:#000; }
+    .hint {
+      position: fixed; top: 12px; left: 12px; right: 12px;
+      color: #fff; background: rgba(0,0,0,.5);
+      padding: 10px 12px; border-radius: 12px;
+      font-family: Arial, sans-serif; z-index: 9999;
+      text-align: center;
+    }
   </style>
-  <script src="https://cdn.jsdelivr.net/npm/three@0.150.1/build/three.min.js"></script>
 </head>
+
 <body>
-  <video id="cam" autoplay playsinline webkit-playsinline muted></video>
-  <div class="badge" id="log"></div>
+  <div class="hint">Apunta la cámara a la imagen</div>
 
-<script>
-  const log = (m)=>{ const el=document.getElementById('log'); if (el) el.textContent = String(m); console.log(m); };
+  <a-scene
+    mindar-image="imageTargetSrc: targets.mind; autoStart: true;"
+    embedded
+    vr-mode-ui="enabled: false"
+    device-orientation-permission-ui="enabled: true"
+    renderer="colorManagement: true; physicallyCorrectLights: true;"
+  >
+    <a-assets>
+      <a-asset-item id="m" src="model.glb"></a-asset-item>
+    </a-assets>
 
-  // 1️⃣ Camera feed
-  const camEl = document.getElementById('cam');
-  (async () => {
-    try {
-      const stream = await navigator.mediaDevices.getUserMedia({
-        video: { facingMode: { ideal: "environment" } }, audio: false
-      });
-      camEl.srcObject = stream;
-    } catch (e) {
-      alert('Camera error: ' + (e.name || '') + ' ' + (e.message || e));
-      console.warn(e);
-    }
-  })();
+    <a-camera position="0 0 0" look-controls="enabled: false"></a-camera>
 
-  // 2️⃣ Three.js overlay
-  const scene = new THREE.Scene();
-  const camera = new THREE.PerspectiveCamera(60, innerWidth/innerHeight, 0.01, 100);
-  camera.position.z = 2;
-
-  const renderer = new THREE.WebGLRenderer({alpha:true, antialias:true});
-  renderer.setSize(innerWidth, innerHeight);
-  renderer.domElement.className = "webgl";
-  document.body.appendChild(renderer.domElement);
-
-  // 3️⃣ Create object (hidden by default)
-  const torus = new THREE.Mesh(
-    new THREE.TorusKnotGeometry(0.5, 0.15, 128, 32),
-    new THREE.MeshStandardMaterial({ color: 0x00ffff, metalness: 0.6, roughness: 0.3 })
-  );
-  torus.visible = false;   // start hidden
-  scene.add(torus);
-  scene.add(new THREE.DirectionalLight(0xffffff, 1).position.set(1,1,1));
-  scene.add(new THREE.AmbientLight(0xffffff, 0.4));
-
-  // 4️⃣ Animate
-  function animate(){
-    if (torus.visible) {
-      torus.rotation.x += 0.01;
-      torus.rotation.y += 0.015;
-      torus.position.y = Math.sin(Date.now()*0.001)*0.1;
-    }
-    renderer.render(scene, camera);
-    requestAnimationFrame(animate);
-  }
-  animate();
-
-  // 5️⃣ Resize
-  addEventListener('resize', () => {
-    camera.aspect = innerWidth/innerHeight;
-    camera.updateProjectionMatrix();
-    renderer.setSize(innerWidth, innerHeight);
-  });
-
-  // 6️⃣ QR gating
-  const REQUIRED_QR_TEXT = 'BRACELET123';
-  const AREA_NEAR_THRESHOLD = 0.06;
-  const AREA_FAR_THRESHOLD  = 0.04;
-  let smoothArea = 0;
-  let lastSeenOK = 0;
-  let detector = null;
-
-  async function startQRLoop() {
-    if (!('BarcodeDetector' in window)) {
-      log('No BarcodeDetector; keeping hidden.');
-      torus.visible = false;
-      return;
-    }
-
-    detector = new BarcodeDetector({ formats: ['qr_code'] });
-    log('Ready for QR...');
-
-    const loop = async () => {
-      try {
-        const codes = await detector.detect(camEl);
-        let found = false;
-
-        if (codes && codes.length) {
-          const vW = camEl.videoWidth || innerWidth;
-          const vH = camEl.videoHeight || innerHeight;
-          const frameArea = vW * vH;
-          let best = null;
-
-          for (const c of codes) {
-            const txt = (c.rawValue || '').trim();
-            const bb = c.boundingBox || {};
-            const area = (bb.width || 0) * (bb.height || 0);
-            if (!best || area > best.area) best = { txt, area };
-          }
-
-          if (best && (!REQUIRED_QR_TEXT || best.txt === REQUIRED_QR_TEXT)) {
-            const areaRatio = best.area / (frameArea || 1);
-            smoothArea = smoothArea * 0.8 + areaRatio * 0.2;
-            const near = smoothArea >= AREA_NEAR_THRESHOLD;
-            const far  = smoothArea <= AREA_FAR_THRESHOLD;
-            if (near) { found = true; lastSeenOK = Date.now(); }
-            else if (!far && Date.now() - lastSeenOK < 800) found = true;
-
-            const scale = THREE.MathUtils.clamp(0.8 + smoothArea*6, 0.8, 2.2);
-            torus.scale.set(scale, scale, scale);
-            log(`QR:${best.txt} ${(smoothArea*100).toFixed(1)}% → ${found?'SHOW':'hide'}`);
-          }
-        }
-
-        // apply visibility only when QR is actually found
-        torus.visible = found;
-      } catch(e) {
-        console.warn(e);
-      }
-      requestAnimationFrame(loop);
-    };
-    loop();
-  }
-
-  camEl.addEventListener('loadedmetadata', startQRLoop, {once:true});
-</script>
-
+    <!-- targetIndex 0 = primer marcador -->
+    <a-entity mindar-image-target="targetIndex: 0">
+      <a-gltf-model
+        src="#m"
+        position="0 0 0"
+        rotation="0 0 0"
+        scale="0.6 0.6 0.6">
+      </a-gltf-model>
+    </a-entity>
+  </a-scene>
 </body>
 </html>

@@ -1,6 +1,0 @@
-/targets/targets.mind
-  Content-Type: application/octet-stream
-
-/video.mp4
-  Content-Type: video/mp4
-  Accept-Ranges: bytes
